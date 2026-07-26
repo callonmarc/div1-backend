@@ -1,25 +1,17 @@
-module.exports = async (req, res) => {
-  // CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "https://www.div1.online");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  // Respond to the browser's preflight request
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method Not Allowed" });
-  }
-
-};
-
 const Stripe = require("stripe");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 module.exports = async (req, res) => {
+  // CORS
+  res.setHeader("Access-Control-Allow-Origin", "https://www.div1.online");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
@@ -39,18 +31,19 @@ module.exports = async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items,
-      success_url: "https://div1.online/success.html",
-      cancel_url: "https://div1.online/shop.html",
+      success_url: "https://www.div1.online/success.html",
+      cancel_url: "https://www.div1.online/shop.html",
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       url: session.url,
     });
+
   } catch (err) {
     console.error(err);
 
-    res.status(500).json({
-      error: "Something went wrong.",
+    return res.status(500).json({
+      error: err.message,
     });
   }
 };
