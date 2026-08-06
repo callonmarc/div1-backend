@@ -1,6 +1,11 @@
 const Stripe = require("stripe");
-
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+// Simple flat-rate example — swap this for your real logic later
+function calculateShipping(subtotal, shippingAddress) {
+  if (subtotal >= 10000) return 0; // free shipping over $100
+  return 599; // $5.99 flat rate, in cents
+}
 
 module.exports = async (req, res) => {
   // CORS
@@ -17,31 +22,54 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { cart } = req.body;
+    const { cart, shippingAddress } = req.body;
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Cart is empty" });
     }
 
-    const line_items = cart.map((item) => ({
-      price: item.priceId,
-      quantity: item.quantity,
-    }));
+    if (!shippingAddress || !shippingAddress.line1 || !shippingAddress.postal_code) {
+      return res.status(400).json({ error: "Shipping address required" });
+    }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      line_items,
-      success_url: "https://www.div1.online/success.html",
-      cancel_url: "https://www.div1.online/shop.html",
+    // Look up each price from Stripe to get real amounts (don't trust client-sent prices)
+    let subtotal = 0;
+    for (const item of cart) {
+      const price = await stripe.prices.retrieve(item.priceId);
+      subtotal += price.unit_amount * item.quantity;
+    }
+
+    const shippingCost = calculateShipping(subtotal, shippingAddress);
+    const amount = subtotal + shippingCost;
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency: "usd",
+      automatic_payment_methods: { enabled: true },
+      shipping: {
+        name: shippingAddress.name,
+        address: {
+          line1: shippingAddress.line1,
+          line2: shippingAddress.line2 || undefined,
+          city: shippingAddress.city,
+          state: shippingAddress.state,
+          postal_code: shippingAddress.postal_code,
+          country: shippingAddress.country || "US",
+        },
+      },
+      metadata: {
+        cart: JSON.stringify(cart),
+      },
     });
 
     return res.status(200).json({
-      url: session.url,
+      clientSecret: paymentIntent.client_secret,
+      amount,
+      shippingCost,
     });
 
   } catch (err) {
     console.error(err);
-
     return res.status(500).json({
       error: err.message,
     });
